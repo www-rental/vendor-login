@@ -1,0 +1,20 @@
+body { font-family: sans-serif; background: #f4f4f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+.container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 350px; }
+.hidden { display: none !important; }
+
+input, select, button { width: 100%; margin-bottom: 1rem; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+button { background: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; }
+button:hover { background: #0056b3; }
+
+.password-wrapper { position: relative; }
+#togglePassword { position: absolute; right: 10px; top: 10px; cursor: pointer; }
+
+#switch-text { font-size: 0.8rem; color: #007bff; cursor: pointer; text-align: center; }
+
+.header { display: flex; justify-content: space-between; align-items: center; }
+#add-btn { width: 40px; border-radius: 50%; font-size: 20px; }
+
+/* Modal Styles */
+.modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; }
+.modal-content { background: white; padding: 2rem; border-radius: 8px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+.row { display: flex; gap: 10px; }
