@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Rental Portal</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="auth-container" class="container">
+        <h2 id="form-title">Login</h2>
+        <form id="auth-form">
+            <input type="email" id="email" placeholder="Email" required>
+            <div class="password-wrapper" style="position: relative;">
+                <input type="password" id="password" placeholder="Password (min 8 chars)" minlength="8" required>
+                <span id="togglePassword" style="cursor:pointer; position:absolute; right:10px; top:10px;">👁️</span>
+            </div>
+            <div id="confirm-wrapper" class="hidden">
+                <input type="password" id="confirm-password" placeholder="Confirm Password">
+            </div>
+            <button type="submit" id="submit-btn">Login</button>
+            <p onclick="toggleAuthMode()" id="switch-text" style="color:blue; cursor:pointer; text-align:center;">Don't have an account? Create one</p>
+        </form>
+    </div>
+
+    <div id="dashboard" class="container hidden">
+        <div class="header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>Vehicle Dashboard</h2>
+            <div style="display: flex; gap: 10px;">
+                <button id="logout-btn" style="background: #95a5a6; color: white; padding: 5px 15px; border-radius: 5px; cursor: pointer; border: none;">Logout</button>
+                <button id="add-btn">+</button>
+            </div>
+        </div>
+        <div id="vehicle-list"></div>
+        
+        <button id="open-delete-modal-btn" style="margin-top: 30px; width: 100%; background: none; color: #e74c3c; border: 1px solid #e74c3c; padding: 10px; border-radius: 5px; cursor: pointer;">Delete My Account</button>
+    </div>
+
+    <div id="delete-user-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3 style="color: #e74c3c;">Delete Account Permanently</h3>
+            <p>This action cannot be undone. To confirm, please type <strong>DELETE USER</strong> in the box below:</p>
+            <input type="text" id="delete-confirm-input" placeholder="DELETE USER" style="text-align: center; border: 2px solid #e74c3c; margin: 15px 0;">
+            <div class="modal-actions" style="display: flex; gap: 10px;">
+                <button id="final-delete-btn" style="background: #e74c3c; color: white; flex: 1;" disabled>Delete Account</button>
+                <button id="close-delete-modal" style="background: #95a5a6; color: white; flex: 1;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Add New Vehicle</h3>
+            <form id="vehicle-form">
+                <div class="row">
+                    <input type="text" id="owner" placeholder="Owner Name" required>
+                </div>
+                <div class="row">
+                    <input type="text" id="country" list="country-list" placeholder="Country" required>
+                    <datalist id="country-list">
+                        <option value="India">
+                        <option value="USA">
+                        <option value="UK">
+                        <option value="UAE">
+                        <option value="Canada">
+                        <option value="Australia">
+                    </datalist>
+                    <input type="tel" id="phone" placeholder="Phone Number" required>
+                </div>
+                <div class="row">
+                    <input type="text" id="state" placeholder="State" required>
+                </div>
+                <div class="row">
+                    <input type="text" id="district" placeholder="District" required>
+                    <input type="text" id="place" placeholder="Place" required>
+                </div>
+                <div class="row">
+                    <input type="text" id="carName" placeholder="Car Name" required>
+                    <input type="text" id="model" placeholder="Model" required>
+                </div>
+                <div class="row">
+                    <select id="fuel" required><option value="">Fuel Type</option><option>Petrol</option><option>Diesel</option><option>EV</option></select>
+                    <select id="transmission" required><option value="">Transmission</option><option>Manual</option><option>Automatic</option></select>
+                </div>
+                <input type="number" id="price" placeholder="Amount Per Day" required>
+                <div class="modal-actions">
+                    <button type="button" id="close-modal">Cancel</button>
+                    <button type="submit" id="save-vehicle-btn">Submit Listing</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="details-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="view-carName">Vehicle Details</h2>
+            <hr>
+            <div id="view-details-body" style="text-align: left; line-height: 1.6;"></div>
+            <div class="modal-actions" style="margin-top: 20px; display: flex; gap: 10px;">
+                <button id="delete-listing-btn" style="background: #e74c3c; color: white; flex: 1; border: none; padding: 10px; border-radius: 5px; cursor: pointer;">Delete Listing</button>
+                <button id="close-details-btn" style="background: #95a5a6; color: white; flex: 1; border: none; padding: 10px; border-radius: 5px; cursor: pointer;">Close</button>
+            </div>
+        </div>
+    </div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, deleteUser } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyAQVE7puyekeZd4tKcyAxLNDtLL6DOPApI",
+        authDomain: "rent-5d.firebaseapp.com",
+        projectId: "rent-5d",
+        storageBucket: "rent-5d.firebasestorage.app",
+        messagingSenderId: "848398219490",
+        appId: "1:848398219490:web:9488a5944ebdc76b8686bb"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let currentViewingId = null;
+
+    // --- 1. COUNTRY CODE & PHONE PROTECTION LOGIC ---
+    const countryCodes = {
+        "India": "+91",
+        "USA": "+1",
+        "UK": "+44",
+        "UAE": "+971",
+        "Canada": "+1",
+        "Australia": "+61"
+    };
+
+    const countryInput = document.getElementById('country');
+    const phoneInput = document.getElementById('phone');
+
+    countryInput.addEventListener('input', () => {
+        const selectedCountry = countryInput.value.trim();
+        if (countryCodes[selectedCountry]) {
+            const code = countryCodes[selectedCountry] + " ";
+            if (!phoneInput.value.startsWith(countryCodes[selectedCountry])) {
+                phoneInput.value = code;
+            }
+        }
+    });
+
+    phoneInput.addEventListener('keydown', (e) => {
+        const selectedCountry = countryInput.value.trim();
+        const code = countryCodes[selectedCountry];
+        if (code && e.key === 'Backspace') {
+            if (phoneInput.selectionStart <= code.length + 1) {
+                e.preventDefault();
+            }
+        }
+    });
+
+    // --- 2. AUTHENTICATION LOGIC ---
+    document.getElementById('auth-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const isLogin = document.getElementById('form-title').innerText === 'Login';
+        const submitBtn = document.getElementById('submit-btn');
+
+        submitBtn.disabled = true;
+        submitBtn.innerText = "Processing...";
+
+        try {
+            if (isLogin) {
+                await signInWithEmailAndPassword(auth, email, password);
+            } else {
+                const confirmPass = document.getElementById('confirm-password').value;
+                if (password !== confirmPass) {
+                    alert("Passwords do not match!");
+                    return;
+                }
+                await createUserWithEmailAndPassword(auth, email, password);
+            }
+            document.getElementById('auth-container').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
+        } catch (error) {
+            alert(error.message);
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerText = isLogin ? "Login" : "Sign Up";
+        }
+    };
+
+    // --- 3. LOGOUT LOGIC ---
+    document.getElementById('logout-btn').onclick = async () => {
+        try {
+            await signOut(auth);
+            document.getElementById('dashboard').classList.add('hidden');
+            document.getElementById('auth-container').classList.remove('hidden');
+        } catch (error) {
+            alert("Logout Error: " + error.message);
+        }
+    };
+
+    // --- 4. ACCOUNT DELETION LOGIC ---
+    const deleteModal = document.getElementById('delete-user-modal');
+    const deleteInput = document.getElementById('delete-confirm-input');
+    const finalDeleteBtn = document.getElementById('final-delete-btn');
+
+    document.getElementById('open-delete-modal-btn').onclick = () => deleteModal.classList.remove('hidden');
+    document.getElementById('close-delete-modal').onclick = () => {
+        deleteModal.classList.add('hidden');
+        deleteInput.value = "";
+    };
+
+    deleteInput.addEventListener('input', () => {
+        finalDeleteBtn.disabled = (deleteInput.value !== "DELETE USER");
+    });
+
+    finalDeleteBtn.onclick = async () => {
+        const user = auth.currentUser;
+        if (user) {
+            try {
+                await deleteUser(user);
+                alert("Account deleted.");
+                location.reload();
+            } catch (error) {
+                if (error.code === 'auth/requires-recent-login') {
+                    alert("For security reasons, please logout and login again before deleting your account.");
+                } else {
+                    alert("Error: " + error.message);
+                }
+            }
+        }
+    };
+
+    // --- 5. DASHBOARD DISPLAY LOGIC ---
+    const vehicleList = document.getElementById('vehicle-list');
+    const q = query(collection(db, "vehicles"), orderBy("timestamp", "desc"));
+    
+    onSnapshot(q, (snapshot) => {
+        vehicleList.innerHTML = '';
+        if (snapshot.empty) {
+            vehicleList.innerHTML = '<p style="text-align:center; color:#888;">No vehicles listed yet.</p>';
+            return;
+        }
+        snapshot.forEach((snapshotDoc) => {
+            const data = snapshotDoc.data();
+            const carId = snapshotDoc.id;
+            const card = document.createElement('div');
+            card.style = "border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer;";
+            card.innerHTML = `
+                <h3 style="margin-top: 0;">${data.carDetails.name} (${data.carDetails.model})</h3>
+                <p style="margin: 5px 0; color: #555;">📍 ${data.location.place}</p>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-weight: bold; color: #2ecc71;">₹${data.pricePerDay} / day</span>
+                    <span style="background: #eee; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">Details</span>
+                </div>
+            `;
+            card.onclick = () => showVehicleDetails(carId, data);
+            vehicleList.appendChild(card);
+        });
+    });
+
+    // --- 6. DETAILS POP-UP ---
+    const detailsModal = document.getElementById('details-modal');
+    function showVehicleDetails(id, data) {
+        currentViewingId = id;
+        document.getElementById('view-carName').innerText = `${data.carDetails.name} ${data.carDetails.model}`;
+        document.getElementById('view-details-body').innerHTML = `
+            <p><strong>Owner:</strong> ${data.ownerName}</p>
+            <p><strong>Phone:</strong> <a href="tel:${data.phone}">${data.phone}</a></p>
+            <p><strong>Location:</strong> ${data.location.place}, ${data.location.district}, ${data.location.state}, ${data.location.country}</p>
+            <p><strong>Fuel Type:</strong> ${data.carDetails.fuel}</p>
+            <p><strong>Transmission:</strong> ${data.carDetails.transmission}</p>
+            <p><strong>Price:</strong> ₹${data.pricePerDay} per day</p>
+        `;
+        detailsModal.classList.remove('hidden');
+    }
+
+    // --- 7. DELETE LISTING ---
+    document.getElementById('delete-listing-btn').onclick = async () => {
+        if (!currentViewingId) return;
+        if (confirm("Permanently delete this listing?")) {
+            try {
+                await deleteDoc(doc(db, "vehicles", currentViewingId));
+                detailsModal.classList.add('hidden');
+                alert("Listing Deleted.");
+            } catch (err) {
+                alert("Delete failed: " + err.message);
+            }
+        }
+    };
+
+    // --- 8. VEHICLE SUBMISSION ---
+    document.getElementById('vehicle-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const fuel = document.getElementById('fuel').value;
+        const trans = document.getElementById('transmission').value;
+        if (!fuel || !trans) { alert("Please fill all fields."); return; }
+
+        const btn = document.getElementById('save-vehicle-btn');
+        btn.innerText = "Saving...";
+        btn.disabled = true;
+
+        try {
+            await addDoc(collection(db, "vehicles"), {
+                ownerName: document.getElementById('owner').value,
+                phone: document.getElementById('phone').value,
+                location: {
+                    country: document.getElementById('country').value,
+                    state: document.getElementById('state').value,
+                    district: document.getElementById('district').value,
+                    place: document.getElementById('place').value,
+                },
+                carDetails: {
+                    name: document.getElementById('carName').value,
+                    model: document.getElementById('model').value,
+                    fuel: fuel,
+                    transmission: trans,
+                },
+                pricePerDay: document.getElementById('price').value,
+                timestamp: new Date()
+            });
+            document.getElementById('modal').classList.add('hidden');
+            e.target.reset();
+        } catch (err) {
+            alert("Error: " + err.message);
+        } finally {
+            btn.innerText = "Submit Listing";
+            btn.disabled = false;
+        }
+    };
+
+    // --- 9. UI HELPERS ---
+    window.toggleAuthMode = function() {
+        const isLogin = document.getElementById('form-title').innerText === 'Login';
+        document.getElementById('form-title').innerText = isLogin ? 'Create Account' : 'Login';
+        document.getElementById('submit-btn').innerText = isLogin ? 'Sign Up' : 'Login';
+        document.getElementById('confirm-wrapper').classList.toggle('hidden');
+        document.getElementById('switch-text').innerText = isLogin 
+            ? "Already have an account? Login" 
+            : "Don't have an account? Create one";
+    };
+
+    document.getElementById('add-btn').onclick = () => document.getElementById('modal').classList.remove('hidden');
+    document.getElementById('close-modal').onclick = () => document.getElementById('modal').classList.add('hidden');
+    document.getElementById('close-details-btn').onclick = () => detailsModal.classList.add('hidden');
+    
+    document.getElementById('togglePassword').onclick = function() {
+        const passField = document.getElementById('password');
+        const type = passField.getAttribute('type') === 'password' ? 'text' : 'password';
+        passField.setAttribute('type', type);
+        this.innerText = type === 'password' ? '👁️' : '🙈';
+    };
+</script>
+</body>
+</html>
