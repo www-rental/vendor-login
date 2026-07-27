@@ -1,320 +1,494 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { 
-    getAuth, 
-    createUserWithEmailAndPassword, 
-    signInWithEmailAndPassword, 
-    signOut, 
-    deleteUser,
-    onAuthStateChanged 
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { 
-    getFirestore, 
-    collection, 
-    addDoc, 
-    onSnapshot, 
-    query, 
-    orderBy, 
-    doc, 
-    deleteDoc,
-    serverTimestamp 
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Rental Portal</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Full-Screen Page View Transitions */
+        .full-page {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #ffffff;
+            z-index: 1000;
+            overflow-y: auto;
+            padding: 24px;
+            box-sizing: border-box;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
 
-// 1. Firebase Configuration
-const firebaseConfig = {
-    apiKey: "AIzaSyAQVE7puyekeZd4tKcyAxLNDtLL6DOPApI",
-    authDomain: "rent-5d.firebaseapp.com",
-    projectId: "rent-5d",
-    storageBucket: "rent-5d.firebasestorage.app",
-    messagingSenderId: "848398219490",
-    appId: "1:848398219490:web:9488a5944ebdc76b8686bb"
-};
+        .full-page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+        }
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+        .category-selector {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
 
-// 2. DOM Element Selectors
-const authForm = document.getElementById('auth-form');
-const authContainer = document.getElementById('auth-container');
-const dashboard = document.getElementById('dashboard');
-const confirmWrapper = document.getElementById('confirm-wrapper');
-const togglePassword = document.getElementById('togglePassword');
-const passwordField = document.getElementById('password');
-const vehicleForm = document.getElementById('vehicle-form');
-const detailsModal = document.getElementById('details-modal');
-const countryInput = document.getElementById('country');
-const phoneInput = document.getElementById('phone');
+        .category-btn {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid var(--accent-violet, #4f46e5);
+            background: transparent;
+            color: var(--accent-violet, #4f46e5);
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
 
-// Navigation / Account Controls
-const logoutBtn = document.getElementById('logout-btn');
-const deleteUserModal = document.getElementById('delete-user-modal');
-const deleteConfirmInput = document.getElementById('delete-confirm-input');
-const finalDeleteBtn = document.getElementById('final-delete-btn');
-const openDeleteModalBtn = document.getElementById('open-delete-modal-btn');
-const closeDeleteModal = document.getElementById('close-delete-modal');
+        .category-btn.active {
+            background: var(--accent-violet, #4f46e5);
+            color: #ffffff;
+        }
 
-let isLoginMode = true;
-let currentViewingId = null;
-let unsubscribeVehicles = null; // Holds our live data listener cleanup function
+        .vehicle-card img {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            border-radius: 8px 8px 0 0;
+        }
 
-// --- 3. AUTH OBSERVATION LAYER (CRITICAL SECURITY FIX) ---
-onAuthStateChanged(auth, (user) => {
-    let vehicleList = document.getElementById('vehicle-list');
+        .vehicle-details-img {
+            width: 100%;
+            max-height: 300px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
 
-    if (user) {
-        // MATCH FOUND: Credentials are valid. Reveal the workspace
-        authContainer.classList.add('hidden');
-        dashboard.classList.remove('hidden');
+    <div id="auth-container" class="container">
+        <h2 id="form-title" style="margin-top: 0; margin-bottom: 1.25rem;">Login</h2>
+        <form id="auth-form">
+            <input type="email" id="email" placeholder="Email" required>
+            <div class="password-wrapper">
+                <input type="password" id="password" placeholder="Password (min 8 chars)" minlength="8" required>
+                <span id="togglePassword">👁️</span>
+            </div>
+            <div id="confirm-wrapper" class="hidden">
+                <input type="password" id="confirm-password" placeholder="Confirm Password">
+            </div>
+            <button type="submit" id="submit-btn">Login</button>
+            <p onclick="toggleAuthMode()" id="switch-text">Don't have an account? Create one</p>
+        </form>
+    </div>
 
-        // Only kick off data stream once match is confirmed
-        if (!unsubscribeVehicles) {
-            const q = query(collection(db, "vehicles"), orderBy("timestamp", "desc"));
-            
-            unsubscribeVehicles = onSnapshot(q, (snapshot) => {
-                if (!vehicleList) {
-                    vehicleList = document.createElement('div');
-                    vehicleList.id = 'vehicle-list';
-                    dashboard.insertBefore(vehicleList, openDeleteModalBtn);
-                }
-                
-                vehicleList.innerHTML = '';
-                if (snapshot.empty) {
-                    vehicleList.innerHTML = '<p style="text-align:center; color:#888; margin-top:20px;">No vehicles listed yet.</p>';
+    <div id="dashboard" class="container hidden">
+        <div class="header">
+            <h2>Vehicle & Product Dashboard</h2>
+            <div class="header-actions">
+                <button id="logout-btn">Logout</button>
+                <button id="add-btn">+</button>
+            </div>
+        </div>
+        <div id="vehicle-list"></div>
+        
+        <button id="open-delete-modal-btn" class="btn-danger-outline">Delete My Account</button>
+    </div>
+
+    <!-- FULL PAGE: ADD PRODUCT FORM -->
+    <div id="add-product-page" class="full-page hidden">
+        <div class="full-page-header">
+            <h2>Add New Listing</h2>
+            <button id="close-add-page-btn" class="btn-secondary">← Back to Dashboard</button>
+        </div>
+
+        <p><strong>Select Category:</strong></p>
+        <div class="category-selector">
+            <button type="button" id="cat-car-btn" class="category-btn active">🚗 Car / Vehicle</button>
+            <button type="button" id="cat-other-btn" class="category-btn">📦 Other Product</button>
+        </div>
+
+        <form id="vehicle-form" style="max-width: 600px; margin: 0 auto;">
+            <div class="row">
+                <input type="text" id="owner" placeholder="Owner / Vendor Name" required>
+            </div>
+            <div class="row">
+                <input type="text" id="country" list="country-list" placeholder="Country" required>
+                <datalist id="country-list">
+                    <option value="India">
+                    <option value="USA">
+                    <option value="UK">
+                    <option value="UAE">
+                    <option value="Canada">
+                    <option value="Australia">
+                </datalist>
+                <input type="tel" id="phone" placeholder="Phone Number" required>
+            </div>
+            <div class="row">
+                <input type="text" id="state" placeholder="State" required>
+            </div>
+            <div class="row">
+                <input type="text" id="district" placeholder="District" required>
+                <input type="text" id="place" placeholder="Place" required>
+            </div>
+
+            <!-- Product Specific Fields -->
+            <div class="row">
+                <input type="text" id="carName" placeholder="Product Name (e.g. Toyota Fortuner)" required>
+                <input type="text" id="model" placeholder="Model / Variant / Specs" required>
+            </div>
+
+            <!-- Car Specific Fields (Toggled Dynamically) -->
+            <div id="car-specific-fields" class="row">
+                <select id="fuel">
+                    <option value="">Fuel Type</option>
+                    <option>Petrol</option>
+                    <option>Diesel</option>
+                    <option>EV</option>
+                </select>
+                <select id="transmission">
+                    <option value="">Transmission</option>
+                    <option>Manual</option>
+                    <option>Automatic</option>
+                </select>
+            </div>
+
+            <div class="row">
+                <input type="number" id="price" placeholder="Rent Per Day (₹)" required>
+            </div>
+            <div class="row">
+                <input type="url" id="photoUrl" placeholder="Product Photo Image URL (e.g. https://...)" required>
+            </div>
+
+            <div class="modal-actions" style="margin-top: 25px;">
+                <button type="button" id="cancel-add-page-btn" class="btn-secondary">Cancel</button>
+                <button type="submit" id="save-vehicle-btn">Submit Listing</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- FULL PAGE: VIEW DETAILS -->
+    <div id="details-page" class="full-page hidden">
+        <div class="full-page-header">
+            <h2 id="view-carName">Product Details</h2>
+            <button id="close-details-page-btn" class="btn-secondary">← Back</button>
+        </div>
+        <div style="max-width: 600px; margin: 0 auto;">
+            <div id="view-details-body" style="text-align: left; line-height: 1.8; font-size: 1rem;"></div>
+            <div class="modal-actions" style="margin-top: 30px;">
+                <button id="delete-listing-btn" class="btn-danger" style="flex: 1;">Delete Listing</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- DELETE USER MODAL -->
+    <div id="delete-user-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3 style="color: var(--accent-red);">Delete Account Permanently</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">This action cannot be undone. To confirm, please type <strong>DELETE USER</strong> in the box below:</p>
+            <input type="text" id="delete-confirm-input" placeholder="DELETE USER" style="text-align: center; border-color: var(--accent-red); margin: 15px 0;">
+            <div class="modal-actions">
+                <button id="final-delete-btn" class="btn-danger" style="flex: 1;" disabled>Delete Account</button>
+                <button id="close-delete-modal" class="btn-secondary" style="flex: 1;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, deleteUser } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyAQVE7puyekeZd4tKcyAxLNDtLL6DOPApI",
+        authDomain: "rent-5d.firebaseapp.com",
+        projectId: "rent-5d",
+        storageBucket: "rent-5d.firebasestorage.app",
+        messagingSenderId: "848398219490",
+        appId: "1:848398219490:web:9488a5944ebdc76b8686bb"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let currentViewingId = null;
+    let selectedCategory = "Car"; // Default selected category
+
+    // --- 1. FULL PAGE NAVIGATION LOGIC ---
+    const addPage = document.getElementById('add-product-page');
+    const detailsPage = document.getElementById('details-page');
+
+    document.getElementById('add-btn').onclick = () => addPage.classList.remove('hidden');
+    document.getElementById('close-add-page-btn').onclick = () => addPage.classList.add('hidden');
+    document.getElementById('cancel-add-page-btn').onclick = () => addPage.classList.add('hidden');
+    document.getElementById('close-details-page-btn').onclick = () => detailsPage.classList.add('hidden');
+
+    // --- 2. CATEGORY TOGGLE LOGIC ---
+    const carBtn = document.getElementById('cat-car-btn');
+    const otherBtn = document.getElementById('cat-other-btn');
+    const carFields = document.getElementById('car-specific-fields');
+
+    carBtn.onclick = () => {
+        selectedCategory = "Car";
+        carBtn.classList.add('active');
+        otherBtn.classList.remove('active');
+        carFields.style.display = 'flex';
+    };
+
+    otherBtn.onclick = () => {
+        selectedCategory = "Other";
+        otherBtn.classList.add('active');
+        carBtn.classList.remove('active');
+        carFields.style.display = 'none';
+    };
+
+    // --- 3. COUNTRY CODE & PHONE PROTECTION LOGIC ---
+    const countryCodes = {
+        "India": "+91",
+        "USA": "+1",
+        "UK": "+44",
+        "UAE": "+971",
+        "Canada": "+1",
+        "Australia": "+61"
+    };
+
+    const countryInput = document.getElementById('country');
+    const phoneInput = document.getElementById('phone');
+
+    countryInput.addEventListener('input', () => {
+        const selectedCountry = countryInput.value.trim();
+        if (countryCodes[selectedCountry]) {
+            const code = countryCodes[selectedCountry] + " ";
+            if (!phoneInput.value.startsWith(countryCodes[selectedCountry])) {
+                phoneInput.value = code;
+            }
+        }
+    });
+
+    phoneInput.addEventListener('keydown', (e) => {
+        const selectedCountry = countryInput.value.trim();
+        const code = countryCodes[selectedCountry];
+        if (code && e.key === 'Backspace') {
+            if (phoneInput.selectionStart <= code.length + 1) {
+                e.preventDefault();
+            }
+        }
+    });
+
+    // --- 4. AUTHENTICATION LOGIC ---
+    document.getElementById('auth-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const isLogin = document.getElementById('form-title').innerText === 'Login';
+        const submitBtn = document.getElementById('submit-btn');
+
+        submitBtn.disabled = true;
+        submitBtn.innerText = "Processing...";
+
+        try {
+            if (isLogin) {
+                await signInWithEmailAndPassword(auth, email, password);
+            } else {
+                const confirmPass = document.getElementById('confirm-password').value;
+                if (password !== confirmPass) {
+                    alert("Passwords do not match!");
                     return;
                 }
-
-                snapshot.forEach((snapshotDoc) => {
-                    const data = snapshotDoc.data();
-                    const docId = snapshotDoc.id;
-                    const card = document.createElement('div');
-                    card.style = "border: 1px solid #ddd; padding: 15px; margin-top: 10px; border-radius: 8px; background: #fff; cursor: pointer; transition: transform 0.2s;";
-                    
-                    const carName = data.carDetails?.name || 'Unknown Vehicle';
-                    const carModel = data.carDetails?.model || 'N/A';
-                    const place = data.location?.place || 'N/A';
-                    const district = data.location?.district || 'N/A';
-                    const rent = data.pricePerDay || '0';
-
-                    card.innerHTML = `
-                        <h3 style="margin: 0;">${carName} (${carModel})</h3>
-                        <p style="color: #666; margin: 5px 0;">📍 ${place}, ${district}</p>
-                        <p><strong>₹${rent} / day</strong></p>
-                    `;
-                    card.onclick = () => showDetails(docId, data);
-                    vehicleList.appendChild(card);
-                });
-            });
-        }
-    } else {
-        // NO MATCH OR LOGGED OUT: Kill data streams & lock down UI
-        if (unsubscribeVehicles) {
-            unsubscribeVehicles(); // Detaches the real-time listener from Firebase securely
-            unsubscribeVehicles = null;
-        }
-        
-        if (vehicleList) {
-            vehicleList.innerHTML = ''; // Wipe domestic HTML content from memory
-        }
-
-        dashboard.classList.add('hidden');
-        authContainer.classList.remove('hidden');
-        authForm.reset();
-    }
-});
-
-// --- 4. HANDLE FIREBASE AUTHENTICATION MATCHES ---
-authForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = document.getElementById('email').value;
-    const password = passwordField.value;
-    const submitBtn = document.getElementById('submit-btn');
-
-    submitBtn.disabled = true;
-    submitBtn.innerText = "Processing...";
-
-    try {
-        if (!isLoginMode) {
-            // Registering a new account credentials set
-            const confirmPass = document.getElementById('confirm-password').value;
-            if (password !== confirmPass) {
-                alert("Passwords do not match!");
-                submitBtn.disabled = false;
-                submitBtn.innerText = "Sign Up";
-                return;
+                await createUserWithEmailAndPassword(auth, email, password);
             }
-            await createUserWithEmailAndPassword(auth, email, password);
-        } else {
-            // Verifying against existing database users
-            await signInWithEmailAndPassword(auth, email, password);
-        }
-    } catch (error) {
-        // If credentials do not match or user doesn't exist, this triggers
-        alert("Authentication Failed: " + error.message);
-        submitBtn.disabled = false;
-        submitBtn.innerText = isLoginMode ? 'Login' : 'Sign Up';
-    }
-});
-
-// --- 5. LOGOUT LOGIC ---
-logoutBtn.onclick = async () => {
-    try {
-        await signOut(auth); // This fires the user block inside onAuthStateChanged automatically
-    } catch (error) {
-        alert("Logout failed: " + error.message);
-    }
-};
-
-// --- 6. COUNTRY CODE FORM LOGIC ---
-const countryCodes = {
-    "India": "+91", "USA": "+1", "United States": "+1",
-    "UK": "+44", "United Kingdom": "+44", "UAE": "+971",
-    "Canada": "+1", "Australia": "+61"
-};
-
-countryInput.addEventListener('input', () => {
-    const val = countryInput.value.trim();
-    if (countryCodes[val]) {
-        const code = countryCodes[val] + " ";
-        if (!phoneInput.value.startsWith(countryCodes[val])) {
-            phoneInput.value = code;
-        }
-    }
-});
-
-phoneInput.addEventListener('keydown', (e) => {
-    const selectedCountry = countryInput.value.trim();
-    const code = countryCodes[selectedCountry];
-    if (code && e.key === 'Backspace') {
-        if (phoneInput.selectionStart <= code.length + 1) {
-            e.preventDefault();
-        }
-    }
-});
-
-// --- 7. UI TOGGLES ---
-window.toggleAuthMode = function() {
-    isLoginMode = !isLoginMode;
-    document.getElementById('form-title').innerText = isLoginMode ? 'Login' : 'Create Account';
-    document.getElementById('submit-btn').innerText = isLoginMode ? 'Login' : 'Sign Up';
-    document.getElementById('switch-text').innerText = isLoginMode 
-        ? "Don't have an account? Create one" 
-        : "Already have an account? Login";
-    confirmWrapper.classList.toggle('hidden', isLoginMode);
-};
-
-togglePassword.addEventListener('click', () => {
-    const type = passwordField.getAttribute('type') === 'password' ? 'text' : 'password';
-    passwordField.setAttribute('type', type);
-    togglePassword.innerText = type === 'password' ? '👁️' : '🙈';
-});
-
-// --- 8. ACCOUNT DELETION LOGIC ---
-openDeleteModalBtn.onclick = () => deleteUserModal.classList.remove('hidden');
-closeDeleteModal.onclick = () => {
-    deleteUserModal.classList.add('hidden');
-    deleteConfirmInput.value = "";
-    finalDeleteBtn.disabled = true;
-};
-
-deleteConfirmInput.addEventListener('input', () => {
-    finalDeleteBtn.disabled = (deleteConfirmInput.value !== "DELETE USER");
-});
-
-finalDeleteBtn.onclick = async () => {
-    const user = auth.currentUser;
-    if (user) {
-        try {
-            await deleteUser(user);
-            alert("Account deleted successfully.");
-            location.reload(); 
+            document.getElementById('auth-container').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
         } catch (error) {
-            if (error.code === 'auth/requires-recent-login') {
-                alert("Security check: Please log out and log back in before deleting your account.");
-            } else {
-                alert("Error: " + error.message);
+            alert(error.message);
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerText = isLogin ? "Login" : "Sign Up";
+        }
+    };
+
+    // --- 5. LOGOUT LOGIC ---
+    document.getElementById('logout-btn').onclick = async () => {
+        try {
+            await signOut(auth);
+            document.getElementById('dashboard').classList.add('hidden');
+            document.getElementById('auth-container').classList.remove('hidden');
+        } catch (error) {
+            alert("Logout Error: " + error.message);
+        }
+    };
+
+    // --- 6. ACCOUNT DELETION LOGIC ---
+    const deleteModal = document.getElementById('delete-user-modal');
+    const deleteInput = document.getElementById('delete-confirm-input');
+    const finalDeleteBtn = document.getElementById('final-delete-btn');
+
+    document.getElementById('open-delete-modal-btn').onclick = () => deleteModal.classList.remove('hidden');
+    document.getElementById('close-delete-modal').onclick = () => {
+        deleteModal.classList.add('hidden');
+        deleteInput.value = "";
+    };
+
+    deleteInput.addEventListener('input', () => {
+        finalDeleteBtn.disabled = (deleteInput.value !== "DELETE USER");
+    });
+
+    finalDeleteBtn.onclick = async () => {
+        const user = auth.currentUser;
+        if (user) {
+            try {
+                await deleteUser(user);
+                alert("Account deleted.");
+                location.reload();
+            } catch (error) {
+                if (error.code === 'auth/requires-recent-login') {
+                    alert("For security reasons, please logout and login again before deleting your account.");
+                } else {
+                    alert("Error: " + error.message);
+                }
             }
         }
-    }
-};
+    };
 
-// --- 9. DETAILS POP-UP ---
-function showDetails(id, data) {
-    currentViewingId = id;
-    document.getElementById('view-carName').innerText = `${data.carDetails?.name || 'Vehicle'} (${data.carDetails?.model || 'N/A'})`;
-    document.getElementById('view-details-body').innerHTML = `
-        <div style="text-align: left; line-height: 1.6;">
-            <p><strong>Owner:</strong> ${data.ownerName || 'N/A'}</p>
-            <p><strong>Phone:</strong> <a href="tel:${data.phone || ''}">${data.phone || 'N/A'}</a></p>
-            <p><strong>Location:</strong> ${data.location?.place || ''}, ${data.location?.district || ''}, ${data.location?.state || ''}, ${data.location?.country || ''}</p>
-            <hr>
-            <p><strong>Fuel:</strong> ${data.carDetails?.fuel || 'N/A'}</p>
-            <p><strong>Transmission:</strong> ${data.carDetails?.transmission || 'N/A'}</p>
-            <p><strong>Daily Rent:</strong> ₹${data.pricePerDay || '0'}</p>
-        </div>
-    `;
-    detailsModal.classList.remove('hidden');
-}
-
-document.getElementById('delete-listing-btn').onclick = async () => {
-    if (!currentViewingId) return;
-    if (confirm("Are you sure you want to delete this listing permanently?")) {
-        try {
-            await deleteDoc(doc(db, "vehicles", currentViewingId));
-            detailsModal.classList.add('hidden');
-            alert("Listing removed.");
-        } catch (err) {
-            alert("Delete failed: " + err.message);
-        }
-    }
-};
-
-document.getElementById('close-details-btn').onclick = () => detailsModal.classList.add('hidden');
-
-// --- 10. VEHICLE SUBMISSION ---
-const modal = document.getElementById('modal');
-const saveVehicleBtn = document.getElementById('save-vehicle-btn');
-
-document.getElementById('add-btn').onclick = () => modal.classList.remove('hidden');
-document.getElementById('close-modal').onclick = () => modal.classList.add('hidden');
-
-vehicleForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fuel = document.getElementById('fuel').value;
-    const trans = document.getElementById('transmission').value;
+    // --- 7. DASHBOARD DISPLAY LOGIC ---
+    const vehicleList = document.getElementById('vehicle-list');
+    const q = query(collection(db, "vehicles"), orderBy("timestamp", "desc"));
     
-    if (!fuel || !trans || fuel === "" || trans === "") {
-        alert("Please select fuel and transmission types.");
-        return;
-    }
-
-    saveVehicleBtn.disabled = true;
-    saveVehicleBtn.innerText = "Saving Listing...";
-
-    try {
-        await addDoc(collection(db, "vehicles"), {
-            ownerName: document.getElementById('owner').value,
-            phone: document.getElementById('phone').value, 
-            location: {
-                country: document.getElementById('country').value,
-                state: document.getElementById('state').value,
-                district: document.getElementById('district').value,
-                place: document.getElementById('place').value,
-            },
-            carDetails: {
-                name: document.getElementById('carName').value,
-                model: document.getElementById('model').value,
-                fuel: fuel,
-                transmission: trans,
-            },
-            pricePerDay: document.getElementById('price').value,
-            timestamp: serverTimestamp()
+    onSnapshot(q, (snapshot) => {
+        vehicleList.innerHTML = '';
+        if (snapshot.empty) {
+            vehicleList.innerHTML = '<p style="text-align:center; color: var(--text-muted); padding: 20px;">No listings available yet.</p>';
+            return;
+        }
+        snapshot.forEach((snapshotDoc) => {
+            const data = snapshotDoc.data();
+            const carId = snapshotDoc.id;
+            const card = document.createElement('div');
+            card.className = "vehicle-card";
+            card.innerHTML = `
+                ${data.photoUrl ? `<img src="${data.photoUrl}" alt="${data.carDetails.name}" onerror="this.style.display='none'">` : ''}
+                <div style="padding: 12px;">
+                    <h3>${data.carDetails.name} ${data.carDetails.model ? `(${data.carDetails.model})` : ''}</h3>
+                    <p class="vehicle-location">📍 ${data.location.place}</p>
+                    <div class="vehicle-footer">
+                        <span class="vehicle-price">₹${data.pricePerDay} / day</span>
+                        <span class="badge-details">View</span>
+                    </div>
+                </div>
+            `;
+            card.onclick = () => showVehicleDetails(carId, data);
+            vehicleList.appendChild(card);
         });
-        modal.classList.add('hidden');
-        vehicleForm.reset();
-    } catch (err) {
-        alert("Save failed: " + err.message);
-    } finally {
-        saveVehicleBtn.disabled = false;
-        saveVehicleBtn.innerText = "Submit Listing";
+    });
+
+    // --- 8. DETAILS FULL PAGE LOGIC ---
+    function showVehicleDetails(id, data) {
+        currentViewingId = id;
+        document.getElementById('view-carName').innerText = `${data.carDetails.name} ${data.carDetails.model || ''}`;
+        
+        let extraFields = '';
+        if (data.category === "Car" || !data.category) {
+            extraFields = `
+                <p><strong>Fuel Type:</strong> ${data.carDetails.fuel || 'N/A'}</p>
+                <p><strong>Transmission:</strong> ${data.carDetails.transmission || 'N/A'}</p>
+            `;
+        }
+
+        document.getElementById('view-details-body').innerHTML = `
+            ${data.photoUrl ? `<img src="${data.photoUrl}" class="vehicle-details-img" alt="${data.carDetails.name}">` : ''}
+            <p><strong>Category:</strong> ${data.category || 'Vehicle'}</p>
+            <p><strong>Owner/Vendor:</strong> ${data.ownerName}</p>
+            <p><strong>Phone:</strong> <a href="tel:${data.phone}" style="color: var(--accent-violet);">${data.phone}</a></p>
+            <p><strong>Location:</strong> ${data.location.place}, ${data.location.district}, ${data.location.state}, ${data.location.country}</p>
+            ${extraFields}
+            <p><strong>Rent Per Day:</strong> <span style="color: var(--accent-green); font-weight: bold;">₹${data.pricePerDay}</span></p>
+        `;
+        detailsPage.classList.remove('hidden');
     }
-});
+
+    // --- 9. DELETE LISTING ---
+    document.getElementById('delete-listing-btn').onclick = async () => {
+        if (!currentViewingId) return;
+        if (confirm("Permanently delete this listing?")) {
+            try {
+                await deleteDoc(doc(db, "vehicles", currentViewingId));
+                detailsPage.classList.add('hidden');
+                alert("Listing Deleted.");
+            } catch (err) {
+                alert("Delete failed: " + err.message);
+            }
+        }
+    };
+
+    // --- 10. PRODUCT SUBMISSION ---
+    document.getElementById('vehicle-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const fuel = document.getElementById('fuel').value;
+        const trans = document.getElementById('transmission').value;
+
+        if (selectedCategory === "Car" && (!fuel || !trans)) {
+            alert("Please select fuel type and transmission for cars.");
+            return;
+        }
+
+        const btn = document.getElementById('save-vehicle-btn');
+        btn.innerText = "Saving...";
+        btn.disabled = true;
+
+        try {
+            await addDoc(collection(db, "vehicles"), {
+                category: selectedCategory,
+                ownerName: document.getElementById('owner').value,
+                phone: document.getElementById('phone').value,
+                location: {
+                    country: document.getElementById('country').value,
+                    state: document.getElementById('state').value,
+                    district: document.getElementById('district').value,
+                    place: document.getElementById('place').value,
+                },
+                carDetails: {
+                    name: document.getElementById('carName').value,
+                    model: document.getElementById('model').value,
+                    fuel: selectedCategory === "Car" ? fuel : "N/A",
+                    transmission: selectedCategory === "Car" ? trans : "N/A",
+                },
+                pricePerDay: document.getElementById('price').value,
+                photoUrl: document.getElementById('photoUrl').value,
+                timestamp: new Date()
+            });
+            addPage.classList.add('hidden');
+            e.target.reset();
+        } catch (err) {
+            alert("Error: " + err.message);
+        } finally {
+            btn.innerText = "Submit Listing";
+            btn.disabled = false;
+        }
+    };
+
+    // --- 11. UI HELPERS ---
+    window.toggleAuthMode = function() {
+        const isLogin = document.getElementById('form-title').innerText === 'Login';
+        document.getElementById('form-title').innerText = isLogin ? 'Create Account' : 'Login';
+        document.getElementById('submit-btn').innerText = isLogin ? 'Sign Up' : 'Login';
+        document.getElementById('confirm-wrapper').classList.toggle('hidden');
+        document.getElementById('switch-text').innerText = isLogin 
+            ? "Already have an account? Login" 
+            : "Don't have an account? Create one";
+    };
+
+    document.getElementById('togglePassword').onclick = function() {
+        const passField = document.getElementById('password');
+        const type = passField.getAttribute('type') === 'password' ? 'text' : 'password';
+        passField.setAttribute('type', type);
+        this.innerText = type === 'password' ? '👁️' : '🙈';
+    };
+</script>
+</body>
+</html>
